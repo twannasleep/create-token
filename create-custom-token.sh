@@ -12,12 +12,34 @@ TOKEN_AMOUNT=1000000000
 TOKEN_IMAGE_URL="https://raw.githubusercontent.com/twannasleep/test-token-metadata/refs/heads/main/pancakeswap/pancakeswap-cake-logo.webp"
 TOKEN_METADATA_URL="https://raw.githubusercontent.com/twannasleep/test-token-metadata/refs/heads/main/bnb/metadata.json"
 RECIPIENT_WALLET="N8V3n4Tfo55hFL3VykwnjyUzjxz2wUkKqFFgPcVXpYX"
+NETWORK="devnet"
 JSON_INPUT=""
 READ_FROM_STDIN=false
-KEYPAIR_DIR="solana-token"
-MINT_AUTHORITY_KEYPAIR=""
-MINT_ADDRESS_KEYPAIR=""
-REUSE_KEYPAIRS=true
+SKIP_CONFIRMATION=false
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Logging functions
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+log_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
 
 # Help function
 function show_help {
@@ -33,44 +55,93 @@ function show_help {
     echo "  -i, --image URL            Set token image URL"
     echo "  -m, --metadata URL         Set token metadata URL"
     echo "  -r, --recipient ADDRESS    Recipient wallet address to transfer tokens to"
+    echo "  -w, --network NETWORK      Network to use (devnet, testnet, mainnet-beta) (default: $NETWORK)"
     echo "  -j, --json JSON_STRING     Set token metadata using JSON string"
     echo "  -f, --json-file FILE       Set token metadata using JSON file"
     echo "  --stdin                    Read JSON input from terminal (interactive mode)"
-    echo "  --new-keypairs             Generate new keypairs instead of reusing existing ones"
-    echo "  --authority FILE           Use specific file as mint authority keypair"
-    echo "  --mint FILE                Use specific file as mint address keypair"
+    echo "  -y, --yes                  Skip confirmation prompt"
     echo ""
     echo "JSON format example:"
     echo '  {"name":"PancakeSwap","symbol":"CAKE","description":"PancakeSwap token test","image":"https://example.com/image.png"}'
     echo ""
+    echo "Networks:"
+    echo "  devnet       - Development network (free SOL via airdrop)"
+    echo "  testnet      - Test network"
+    echo "  mainnet-beta - Main production network (requires real SOL)"
+    echo ""
 }
 
-# Parse JSON input
+# Validate inputs
+validate_inputs() {
+    # Validate decimals
+    if ! [[ "$TOKEN_DECIMALS" =~ ^[0-9]+$ ]] || [ "$TOKEN_DECIMALS" -lt 0 ] || [ "$TOKEN_DECIMALS" -gt 9 ]; then
+        log_error "Token decimals must be a number between 0 and 9"
+        exit 1
+    fi
+
+    # Validate amount
+    if ! [[ "$TOKEN_AMOUNT" =~ ^[0-9]+$ ]] || [ "$TOKEN_AMOUNT" -le 0 ]; then
+        log_error "Token amount must be a positive integer"
+        exit 1
+    fi
+
+    # Validate network
+    if [[ ! "$NETWORK" =~ ^(devnet|testnet|mainnet-beta)$ ]]; then
+        log_error "Network must be one of: devnet, testnet, mainnet-beta"
+        exit 1
+    fi
+
+    # Validate recipient wallet if provided
+    if [ -n "$RECIPIENT_WALLET" ]; then
+        if [ ${#RECIPIENT_WALLET} -lt 32 ] || [ ${#RECIPIENT_WALLET} -gt 44 ]; then
+            log_error "Recipient wallet address appears to be invalid (wrong length)"
+            exit 1
+        fi
+    fi
+
+    # Validate URLs if provided
+    if [ -n "$TOKEN_IMAGE_URL" ] && ! [[ "$TOKEN_IMAGE_URL" =~ ^https?:// ]]; then
+        log_warning "Token image URL should start with http:// or https://"
+    fi
+
+    if [ -n "$TOKEN_METADATA_URL" ] && ! [[ "$TOKEN_METADATA_URL" =~ ^https?:// ]]; then
+        log_warning "Token metadata URL should start with http:// or https://"
+    fi
+}
+
+# Parse JSON input with improved parsing
 function parse_json {
     if [ -n "$1" ]; then
-        # Extract name if present
-        NAME=$(echo "$1" | grep -o '"name":"[^"]*"' | cut -d'"' -f4)
-        if [ -n "$NAME" ]; then
-            TOKEN_NAME="$NAME"
+        # Try to use jq if available for better JSON parsing
+        if command -v jq &> /dev/null; then
+            log_info "Using jq for JSON parsing"
+            
+            # Validate JSON format first
+            if ! echo "$1" | jq . > /dev/null 2>&1; then
+                log_error "Invalid JSON format"
+                exit 1
+            fi
+            
+            # Extract fields using jq
+            NAME=$(echo "$1" | jq -r '.name // empty')
+            SYMBOL=$(echo "$1" | jq -r '.symbol // empty')
+            DESC=$(echo "$1" | jq -r '.description // empty')
+            IMAGE=$(echo "$1" | jq -r '.image // empty')
+        else
+            log_warning "jq not found, using basic grep parsing (consider installing jq for better JSON support)"
+            
+            # Fallback to grep-based parsing
+            NAME=$(echo "$1" | grep -o '"name":"[^"]*"' | cut -d'"' -f4)
+            SYMBOL=$(echo "$1" | grep -o '"symbol":"[^"]*"' | cut -d'"' -f4)
+            DESC=$(echo "$1" | grep -o '"description":"[^"]*"' | cut -d'"' -f4)
+            IMAGE=$(echo "$1" | grep -o '"image":"[^"]*"' | cut -d'"' -f4)
         fi
 
-        # Extract symbol if present
-        SYMBOL=$(echo "$1" | grep -o '"symbol":"[^"]*"' | cut -d'"' -f4)
-        if [ -n "$SYMBOL" ]; then
-            TOKEN_SYMBOL="$SYMBOL"
-        fi
-
-        # Extract description if present
-        DESC=$(echo "$1" | grep -o '"description":"[^"]*"' | cut -d'"' -f4)
-        if [ -n "$DESC" ]; then
-            TOKEN_DESCRIPTION="$DESC"
-        fi
-
-        # Extract image if present
-        IMAGE=$(echo "$1" | grep -o '"image":"[^"]*"' | cut -d'"' -f4)
-        if [ -n "$IMAGE" ]; then
-            TOKEN_IMAGE_URL="$IMAGE"
-        fi
+        # Update variables if values were found
+        [ -n "$NAME" ] && TOKEN_NAME="$NAME"
+        [ -n "$SYMBOL" ] && TOKEN_SYMBOL="$SYMBOL"
+        [ -n "$DESC" ] && TOKEN_DESCRIPTION="$DESC"
+        [ -n "$IMAGE" ] && TOKEN_IMAGE_URL="$IMAGE"
     fi
 }
 
@@ -113,6 +184,10 @@ while [[ $# -gt 0 ]]; do
             RECIPIENT_WALLET="$2"
             shift 2
             ;;
+        -w|--network)
+            NETWORK="$2"
+            shift 2
+            ;;
         -j|--json)
             JSON_INPUT="$2"
             parse_json "$JSON_INPUT"
@@ -123,7 +198,7 @@ while [[ $# -gt 0 ]]; do
                 JSON_INPUT=$(cat "$2")
                 parse_json "$JSON_INPUT"
             else
-                echo "Error: JSON file not found: $2"
+                log_error "JSON file not found: $2"
                 exit 1
             fi
             shift 2
@@ -132,17 +207,9 @@ while [[ $# -gt 0 ]]; do
             READ_FROM_STDIN=true
             shift
             ;;
-        --new-keypairs)
-            REUSE_KEYPAIRS=false
+        -y|--yes)
+            SKIP_CONFIRMATION=true
             shift
-            ;;
-        --authority)
-            MINT_AUTHORITY_KEYPAIR="$2"
-            shift 2
-            ;;
-        --mint)
-            MINT_ADDRESS_KEYPAIR="$2"
-            shift 2
             ;;
         *)
             # Check if input is a JSON string starting with {
@@ -151,7 +218,7 @@ while [[ $# -gt 0 ]]; do
                 parse_json "$JSON_INPUT"
                 shift
             else
-                echo "Unknown option: $1"
+                log_error "Unknown option: $1"
                 show_help
                 exit 1
             fi
@@ -168,7 +235,10 @@ if [ "$READ_FROM_STDIN" = true ]; then
     parse_json "$JSON_INPUT"
 fi
 
-echo "Creating a Solana token on devnet with the following parameters:"
+# Validate all inputs
+validate_inputs
+
+log_info "Creating a Solana token on $NETWORK with the following parameters:"
 echo "  Token Name: $TOKEN_NAME"
 echo "  Token Symbol: $TOKEN_SYMBOL"
 echo "  Token Description: $TOKEN_DESCRIPTION"
@@ -176,194 +246,207 @@ echo "  Token Decimals: $TOKEN_DECIMALS"
 echo "  Token Amount to Mint: $TOKEN_AMOUNT"
 echo "  Token Image URL: $TOKEN_IMAGE_URL"
 echo "  Token Metadata URL: $TOKEN_METADATA_URL"
+echo "  Network: $NETWORK"
 if [ -n "$RECIPIENT_WALLET" ]; then
     echo "  Recipient Wallet: $RECIPIENT_WALLET"
 fi
 echo ""
-echo "Press Enter to continue or Ctrl+C to cancel..."
-read
+
+if [ "$SKIP_CONFIRMATION" = false ]; then
+    echo "Press Enter to continue or Ctrl+C to cancel..."
+    read
+fi
 
 # Check if Solana CLI is installed
 if ! command -v solana &> /dev/null; then
-    echo "Solana CLI not found. Installing Solana tools..."
+    log_info "Solana CLI not found. Installing Solana tools..."
     sh -c "$(curl -sSfL https://release.solana.com/stable/install)"
-    export PATH="/home/$USER/.local/share/solana/install/active_release/bin:$PATH"
-    echo "Solana tools installed!"
+    
+    # Set PATH for different OS
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS
+        export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+    else
+        # Linux
+        export PATH="/home/$USER/.local/share/solana/install/active_release/bin:$PATH"
+    fi
+    
+    log_success "Solana tools installed!"
 else
-    echo "Solana CLI already installed."
+    log_success "Solana CLI already installed."
+fi
+
+# Check if spl-token is available
+if ! command -v spl-token &> /dev/null; then
+    log_error "spl-token command not found. Please ensure SPL Token CLI is installed."
+    log_info "You can install it with: cargo install spl-token-cli"
+    exit 1
 fi
 
 # Create directory for token files
-mkdir -p "$KEYPAIR_DIR"
-cd "$KEYPAIR_DIR"
+mkdir -p solana-token
+cd solana-token
 
-# Set Solana to use devnet
-solana config set --url devnet
-echo "Solana configured to use devnet."
+# Set Solana to use specified network
+log_info "Configuring Solana to use $NETWORK..."
+solana config set --url "$NETWORK"
+log_success "Solana configured to use $NETWORK."
 
-# Function to find existing keypair files
-find_keypair() {
-    local prefix=$1
-    local file
-    
-    # Look for keypair files with the given prefix
-    for file in $(find . -name "${prefix}*.json" 2>/dev/null); do
-        # Return the first match
-        echo "$file"
-        return 0
-    done
-    
-    # No match found
-    echo ""
-    return 1
-}
-
-# Handle mint authority keypair
-if [ -n "$MINT_AUTHORITY_KEYPAIR" ] && [ -f "$MINT_AUTHORITY_KEYPAIR" ]; then
-    echo "Using provided mint authority keypair: $MINT_AUTHORITY_KEYPAIR"
-elif [ "$REUSE_KEYPAIRS" = true ]; then
-    # Try to find existing keypair
-    EXISTING_KEYPAIR=$(find_keypair "bos")
-    
-    if [ -n "$EXISTING_KEYPAIR" ]; then
-        MINT_AUTHORITY_KEYPAIR="$EXISTING_KEYPAIR"
-        echo "Reusing existing mint authority keypair: $MINT_AUTHORITY_KEYPAIR"
-    else
-        echo "Creating mint authority keypair..."
-        MINT_AUTHORITY_KEYPAIR=$(solana-keygen grind --starts-with bos:1 --no-bip39-passphrase | grep 'Wrote keypair to' | awk '{print $4}')
-        echo "Mint authority keypair created: $MINT_AUTHORITY_KEYPAIR"
-    fi
-else
-    echo "Creating new mint authority keypair..."
-    MINT_AUTHORITY_KEYPAIR=$(solana-keygen grind --starts-with bos:1 --no-bip39-passphrase | grep 'Wrote keypair to' | awk '{print $4}')
-    echo "Mint authority keypair created: $MINT_AUTHORITY_KEYPAIR"
-fi
+# Create a keypair for the mint authority (removed prefix requirement)
+log_info "Creating mint authority keypair..."
+MINT_AUTHORITY_KEYPAIR="mint-authority-$(date +%s).json"
+solana-keygen new --no-bip39-passphrase --outfile "$MINT_AUTHORITY_KEYPAIR" --silent
+log_success "Mint authority keypair created: $MINT_AUTHORITY_KEYPAIR"
 
 # Set the keypair as default
 solana config set --keypair "$MINT_AUTHORITY_KEYPAIR"
-echo "Default keypair set to mint authority."
+log_success "Default keypair set to mint authority."
 
-# Get mint authority address
-MINT_AUTHORITY_ADDRESS=$(solana address -k "$MINT_AUTHORITY_KEYPAIR")
-echo "Mint authority address: $MINT_AUTHORITY_ADDRESS"
+# Get the mint authority address
+MINT_AUTHORITY_ADDRESS=$(solana address)
+log_info "Mint authority address: $MINT_AUTHORITY_ADDRESS"
+
+# Get SOL for the specified network
+if [ "$NETWORK" = "devnet" ]; then
+    log_info "Requesting devnet SOL..."
+    if solana airdrop 2 "$MINT_AUTHORITY_ADDRESS"; then
+        log_success "Received 2 SOL on devnet"
+    else
+        log_warning "Airdrop failed, but continuing anyway..."
+    fi
+elif [ "$NETWORK" = "testnet" ]; then
+    log_info "Requesting testnet SOL..."
+    if solana airdrop 1 "$MINT_AUTHORITY_ADDRESS"; then
+        log_success "Received 1 SOL on testnet"
+    else
+        log_warning "Airdrop failed, but continuing anyway..."
+    fi
+else
+    log_warning "Using mainnet-beta - make sure you have sufficient SOL in your wallet!"
+fi
 
 # Check balance
 BALANCE=$(solana balance)
-echo "Current balance: $BALANCE"
+log_info "Current balance: $BALANCE"
 
-# Request SOL if balance is low
-if (( $(echo "$BALANCE < 0.5" | bc -l) )); then
-    echo "Balance is low. Requesting devnet SOL..."
-    solana airdrop 2 "$MINT_AUTHORITY_ADDRESS"
-    echo "Received 2 SOL on devnet for address: $MINT_AUTHORITY_ADDRESS"
-    
-    # Check new balance
-    BALANCE=$(solana balance)
-    echo "New balance: $BALANCE"
-fi
-
-# Handle mint address keypair
-if [ -n "$MINT_ADDRESS_KEYPAIR" ] && [ -f "$MINT_ADDRESS_KEYPAIR" ]; then
-    echo "Using provided mint address keypair: $MINT_ADDRESS_KEYPAIR"
-elif [ "$REUSE_KEYPAIRS" = true ]; then
-    # Try to find existing keypair
-    EXISTING_KEYPAIR=$(find_keypair "mnt")
-    
-    if [ -n "$EXISTING_KEYPAIR" ]; then
-        MINT_ADDRESS_KEYPAIR="$EXISTING_KEYPAIR"
-        echo "Reusing existing mint address keypair: $MINT_ADDRESS_KEYPAIR"
-    else
-        echo "Creating mint address keypair..."
-        MINT_ADDRESS_KEYPAIR=$(solana-keygen grind --starts-with mnt:1 --no-bip39-passphrase | grep 'Wrote keypair to' | awk '{print $4}')
-        echo "Mint address keypair created: $MINT_ADDRESS_KEYPAIR"
-    fi
-else
-    echo "Creating new mint address keypair..."
-    MINT_ADDRESS_KEYPAIR=$(solana-keygen grind --starts-with mnt:1 --no-bip39-passphrase | grep 'Wrote keypair to' | awk '{print $4}')
-    echo "Mint address keypair created: $MINT_ADDRESS_KEYPAIR"
-fi
+# Create mint address (removed prefix requirement)
+log_info "Creating mint address..."
+MINT_ADDRESS_KEYPAIR="mint-address-$(date +%s).json"
+solana-keygen new --no-bip39-passphrase --outfile "$MINT_ADDRESS_KEYPAIR" --silent
+log_success "Mint address keypair created: $MINT_ADDRESS_KEYPAIR"
 
 # Extract just the public key from the keypair file
 MINT_PUBLIC_KEY=$(solana address -k "$MINT_ADDRESS_KEYPAIR")
-echo "Mint public key: $MINT_PUBLIC_KEY"
+log_info "Mint public key: $MINT_PUBLIC_KEY"
 
-# Save keypair information to a file for future reference
-echo "Saving keypair information to keypairs.txt..."
-cat > "keypairs.txt" << EOF
-Mint Authority Keypair: $MINT_AUTHORITY_KEYPAIR
-Mint Authority Address: $MINT_AUTHORITY_ADDRESS
-Mint Address Keypair: $MINT_ADDRESS_KEYPAIR
-Mint Public Key: $MINT_PUBLIC_KEY
-Last Used: $(date)
-EOF
-
-# Check if token already exists
-echo "Checking if token already exists..."
-TOKEN_EXISTS=false
-if solana account "$MINT_PUBLIC_KEY" &>/dev/null; then
-    echo "Token already exists. Skipping token creation."
-    TOKEN_EXISTS=true
+# Create token mint with metadata extension
+log_info "Creating token mint with metadata extension..."
+if spl-token create-token --program-id TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb --enable-metadata --decimals "$TOKEN_DECIMALS" "$MINT_ADDRESS_KEYPAIR"; then
+    log_success "Token mint created successfully"
 else
-    echo "Token does not exist. Creating new token..."
-    # Create token mint with metadata extension
-    echo "Creating token mint with metadata extension..."
-    spl-token create-token --program-id TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb --enable-metadata --decimals "$TOKEN_DECIMALS" "$MINT_ADDRESS_KEYPAIR"
-    
-    # Generate metadata file
-    echo "Generating metadata file..."
-    cat > "metadata.json" << EOF
+    log_error "Failed to create token mint"
+    exit 1
+fi
+
+# Generate metadata file with timestamp
+METADATA_FILE="metadata-$(date +%s).json"
+log_info "Generating metadata file: $METADATA_FILE"
+cat > "$METADATA_FILE" << EOF
 {
   "name": "$TOKEN_NAME",
   "symbol": "$TOKEN_SYMBOL",
   "description": "$TOKEN_DESCRIPTION",
-  "image": "$TOKEN_IMAGE_URL"
+  "image": "$TOKEN_IMAGE_URL",
+  "external_url": "",
+  "attributes": [],
+  "properties": {
+    "files": [
+      {
+        "uri": "$TOKEN_IMAGE_URL",
+        "type": "image/png"
+      }
+    ],
+    "category": "image"
+  }
 }
 EOF
-    echo "Metadata file generated: metadata.json"
-    echo "NOTE: You should upload this file to a permanent storage location and update the metadata URL."
-    
-    # Initialize metadata for the token
-    echo "Initializing token metadata..."
-    spl-token initialize-metadata "$MINT_PUBLIC_KEY" "$TOKEN_NAME" "$TOKEN_SYMBOL" "$TOKEN_METADATA_URL"
+log_success "Metadata file generated: $METADATA_FILE"
+log_warning "NOTE: You should upload this file to a permanent storage location and update the metadata URL."
+
+# Initialize metadata for the token
+log_info "Initializing token metadata..."
+if spl-token initialize-metadata "$MINT_PUBLIC_KEY" "$TOKEN_NAME" "$TOKEN_SYMBOL" "$TOKEN_METADATA_URL"; then
+    log_success "Token metadata initialized"
+else
+    log_error "Failed to initialize token metadata"
+    exit 1
 fi
 
-# Check if token account exists for mint authority
-echo "Checking if token account exists for mint authority..."
-if ! spl-token accounts | grep -q "$MINT_PUBLIC_KEY"; then
-    echo "Creating token account..."
-    spl-token create-account "$MINT_PUBLIC_KEY"
+# Create token account
+log_info "Creating token account..."
+if spl-token create-account "$MINT_PUBLIC_KEY"; then
+    log_success "Token account created"
 else
-    echo "Token account already exists for mint authority."
+    log_error "Failed to create token account"
+    exit 1
 fi
 
 # Mint tokens
-echo "Minting $TOKEN_AMOUNT tokens..."
-spl-token mint "$MINT_PUBLIC_KEY" "$TOKEN_AMOUNT"
+log_info "Minting $TOKEN_AMOUNT tokens..."
+if spl-token mint "$MINT_PUBLIC_KEY" "$TOKEN_AMOUNT"; then
+    log_success "Tokens minted successfully"
+else
+    log_error "Failed to mint tokens"
+    exit 1
+fi
 
 # Transfer tokens to recipient wallet if specified
 if [ -n "$RECIPIENT_WALLET" ]; then
-    echo "Transferring tokens to recipient wallet: $RECIPIENT_WALLET"
+    log_info "Transferring tokens to recipient wallet: $RECIPIENT_WALLET"
     # Calculate amount to transfer (we'll transfer 80% of minted tokens)
-    TRANSFER_AMOUNT=$(echo "$TOKEN_AMOUNT * 0.8" | bc)
-    # If bc is not available, use integer division
-    if [ -z "$TRANSFER_AMOUNT" ]; then
+    if command -v bc &> /dev/null; then
+        TRANSFER_AMOUNT=$(echo "$TOKEN_AMOUNT * 0.8" | bc | cut -d'.' -f1)
+    else
         TRANSFER_AMOUNT=$((TOKEN_AMOUNT * 8 / 10))
     fi
-    echo "Transferring $TRANSFER_AMOUNT tokens..."
-    spl-token transfer --fund-recipient "$MINT_PUBLIC_KEY" "$TRANSFER_AMOUNT" "$RECIPIENT_WALLET"
-    echo "Tokens transferred successfully!"
+    
+    log_info "Transferring $TRANSFER_AMOUNT tokens..."
+    if spl-token transfer --fund-recipient "$MINT_PUBLIC_KEY" "$TRANSFER_AMOUNT" "$RECIPIENT_WALLET"; then
+        log_success "Tokens transferred successfully!"
+    else
+        log_error "Failed to transfer tokens"
+        exit 1
+    fi
 fi
 
 # Display token info
-echo "Token creation/update complete!"
+log_success "Token creation complete!"
+echo ""
+echo "=== TOKEN INFORMATION ==="
 echo "Mint Address: $MINT_PUBLIC_KEY"
 echo "Token Name: $TOKEN_NAME"
 echo "Token Symbol: $TOKEN_SYMBOL"
 echo "Token Decimals: $TOKEN_DECIMALS"
-echo "Token Balance:"
+echo "Network: $NETWORK"
+echo ""
+echo "=== TOKEN BALANCE ==="
 spl-token accounts
 
-echo "You can view your token on Solana Explorer: https://explorer.solana.com/address/$MINT_PUBLIC_KEY?cluster=devnet"
+# Generate explorer URL based on network
+if [ "$NETWORK" = "mainnet-beta" ]; then
+    EXPLORER_URL="https://explorer.solana.com/address/$MINT_PUBLIC_KEY"
+else
+    EXPLORER_URL="https://explorer.solana.com/address/$MINT_PUBLIC_KEY?cluster=$NETWORK"
+fi
+
 echo ""
-echo "IMPORTANT: Keep your keypair files safe. They control your token!"
-echo "Keypair information saved in: $KEYPAIR_DIR/keypairs.txt" 
+echo "=== EXPLORER LINK ==="
+echo "You can view your token on Solana Explorer: $EXPLORER_URL"
+echo ""
+echo "=== IMPORTANT FILES ==="
+echo "Keep these keypair files safe - they control your token!"
+echo "Mint Authority Keypair: $PWD/$MINT_AUTHORITY_KEYPAIR"
+echo "Mint Address Keypair: $PWD/$MINT_ADDRESS_KEYPAIR"
+echo "Metadata File: $PWD/$METADATA_FILE"
+echo ""
+log_success "Script completed successfully!" 
