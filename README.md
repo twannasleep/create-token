@@ -178,6 +178,42 @@ Both scripts support all Solana networks:
 - `testnet` - Test network
 - `mainnet-beta` - Production network (requires real SOL)
 
+## Future Tools Roadmap
+
+We're planning to expand this toolkit with the following tools:
+
+### 1. Token Airdrop Tool
+- Distribute tokens to multiple recipients in batch operations
+- Support for CSV/JSON input with addresses and amounts
+- Configurable transaction rate limiting
+- Transaction fee estimation and optimization
+- Progress tracking with resumable operations
+
+### 2. Token Vesting Tool
+- Create time-locked tokens with customizable vesting schedules
+- Support for cliff periods, linear vesting, and custom schedules
+- Management interface for team allocations
+- Revocable and non-revocable vesting options
+- Integration with Token 2022 extensions
+
+### 3. Token Metadata Manager
+- Update metadata for existing tokens
+- Batch update capabilities for collections
+- Support for image hosting and integration with decentralized storage
+- Rich attribute management for NFT collections
+
+### 4. Token Analytics Tool
+- Track holder statistics and token distribution metrics
+- Generate reports on wallet concentration
+- Monitor trading activity across different marketplaces
+- Export data in various formats for analysis
+
+### 5. Token Authority Manager
+- Transfer token authorities between accounts
+- Setup multisig governance controls
+- Delegate temporary authorities with expiration
+- Configure threshold-based approval systems
+
 ## Security Notes
 
 - Keep your keypair files and private keys secure
