@@ -1,101 +1,190 @@
-# Create Solana Token
+# Solana Token Management Tools
 
-This repository contains scripts to help you create a Solana token on the devnet.
+A collection of professional-grade bash scripts for creating and managing Solana tokens.
+
+## Overview
+
+This repository contains two powerful command-line tools for Solana token operations:
+
+- **`create-custom-token.sh`**: Create custom SPL tokens with extensive configuration options
+- **`burn-token.sh`**: Burn tokens and manage token authorities
+
+Both scripts support Standard SPL Token and Token 2022 programs, providing comprehensive management capabilities for token creators and administrators.
 
 ## Prerequisites
 
-- A Unix-like operating system (Linux, macOS)
-- Internet connection
-- Basic knowledge of terminal/command line
+- Bash shell environment (Linux, macOS, WSL)
+- [Solana CLI tools](https://docs.solana.com/cli/install-solana-cli-tools)
+- [SPL Token CLI](https://spl.solana.com/token)
 
 ## Getting Started
 
-1. Make the scripts executable:
+1. Clone this repository:
    ```bash
-   chmod +x create-solana-token.sh create-custom-token.sh
+   git clone https://github.com/yourusername/solana-token-tools.git
+   cd solana-token-tools
    ```
 
-2. Run one of the scripts:
-   
-   Basic script (with default values):
+2. Make the scripts executable:
    ```bash
-   ./create-solana-token.sh [recipient_wallet_address]
-   ```
-   
-   Advanced script (with customization options):
-   ```bash
-   ./create-custom-token.sh [options]
+   chmod +x create-custom-token.sh burn-token.sh
    ```
 
-## Script Options
+## Create Custom Token
 
-### Basic Script (`create-solana-token.sh`)
-
-The basic script uses hardcoded default values for token creation.
-
-You can optionally provide a recipient wallet address as an argument to transfer tokens to:
-```bash
-./create-solana-token.sh YOUR_WALLET_ADDRESS
-```
-
-### Advanced Script (`create-custom-token.sh`)
-
-The advanced script allows you to customize your token through command-line arguments:
+### Basic Usage
 
 ```bash
-./create-custom-token.sh [options]
+./create-custom-token.sh --name "My Token" --symbol TKN --decimals 9 --amount 1000000000
 ```
 
-Available options:
-- `-h, --help`: Show help message
-- `-n, --name NAME`: Set token name (default: "Example Token")
-- `-s, --symbol SYMBOL`: Set token symbol (default: "EXMPL")
-- `-d, --description DESC`: Set token description
-- `-c, --decimals DECIMALS`: Set token decimals (default: 9)
-- `-a, --amount AMOUNT`: Set token amount to mint (default: 100)
-- `-i, --image URL`: Set token image URL
-- `-m, --metadata URL`: Set token metadata URL
-- `-r, --recipient ADDRESS`: Set recipient wallet address to transfer tokens to
+### Key Features
 
-Example:
+- Full support for both Standard SPL Token and Token 2022 programs
+- Interactive or command-line modes
+- Advanced token features for Token 2022:
+  - Non-transferable tokens
+  - Interest-bearing tokens
+  - Permanent delegate
+  - Confidential transfers
+- Authority management:
+  - Freeze authority
+  - Disable/transfer mint authority
+  - Multisig authority support
+- JSON metadata customization
+- Cross-network support (devnet, testnet, mainnet-beta)
+
+### Options
+
+| Category | Option | Description |
+|----------|--------|-------------|
+| **Basic** | `-n, --name NAME` | Set token name |
+| | `-s, --symbol SYMBOL` | Set token symbol |
+| | `-d, --description DESC` | Set token description |
+| | `-c, --decimals NUM` | Set token decimals (0-9) |
+| | `-a, --amount NUM` | Token amount to mint |
+| | `-r, --recipient ADDRESS` | Recipient wallet to receive tokens |
+| | `-w, --network NETWORK` | Network to use (devnet, testnet, mainnet-beta) |
+| **Metadata** | `-i, --image URL` | Token image URL |
+| | `-m, --metadata URL` | Token metadata URL |
+| | `-j, --json JSON_STRING` | Set token metadata using JSON |
+| | `-f, --json-file FILE` | Set token metadata from JSON file |
+| **Token Program** | `--token-2022` | Use Token 2022 program (default) |
+| | `--standard-token` | Use Standard SPL Token program |
+| **Advanced** | `--enable-freeze-authority` | Enable freeze authority |
+| | `--disable-mint-authority` | Disable mint authority after initial minting |
+| | `--transfer-mint-authority ADDR` | Transfer mint authority |
+| | `--enable-permanent-delegate ADDR` | Enable permanent delegate (Token 2022) |
+| | `--enable-interest-bearing RATE` | Make token interest-bearing (Token 2022) |
+| | `--enable-non-transferable` | Make token non-transferable (Token 2022) |
+| | `--multisig-authority ADDRS` | Create multisig authority |
+
+## Burn Token
+
+### Basic Usage
+
 ```bash
-./create-custom-token.sh --name "My Token" --symbol "MTK" --decimals 6 --amount 1000 --recipient YOUR_WALLET_ADDRESS
+./burn-token.sh -f keypair.json -t TOKEN_ADDRESS
 ```
 
-## What the Scripts Do
+### Key Features
 
-Both scripts automate the following steps:
+- Burn specific tokens or all tokens in a wallet
+- Close token accounts to recover SOL rent
+- Batch operations from file
+- Burn tokens from multiple holders
+- Authority management operations
+- Token program auto-detection
+- Interactive and command-line modes
+- Dry run capability for testing
 
-1. Install Solana CLI tools if not already installed
-2. Create a keypair for the mint authority (with public key starting with "bos")
-3. Get some devnet SOL via airdrop
-4. Create a mint address (with public key starting with "mnt")
-5. Create the token mint account with metadata extension
-6. Initialize the metadata for the token
-7. Create a token account and mint tokens
-8. Transfer tokens to your wallet (if recipient address is provided)
+### Options
 
-## Customizing Your Token Metadata
+| Category | Option | Description |
+|----------|--------|-------------|
+| **Basic** | `-k, --private-key KEY` | Private key of wallet |
+| | `-f, --key-file FILE` | Path to keypair JSON file |
+| | `-t, --token ADDRESS` | Token mint address to burn |
+| | `-a, --amount AMOUNT` | Amount to burn (if not specified, burns all) |
+| | `-w, --network NETWORK` | Network to use (devnet, testnet, mainnet-beta) |
+| | `--burn-all` | Burn all tokens in the wallet |
+| | `--close-account` | Close token account after burning |
+| **Batch Operations** | `--batch-file FILE` | Read token addresses from a file |
+| | `--max-batch-size NUM` | Maximum operations per batch |
+| **Holder Operations** | `--burn-holder-tokens` | Burn from all token holders |
+| | `--holder-address ADDR` | Burn from specific holder |
+| | `--exempt-holders LIST` | Comma-separated addresses to exempt |
+| | `--burn-percentage PCT` | Percentage of tokens to burn (1-100) |
+| **Authority** | `--revoke-authority` | Revoke token authority |
+| | `--authority-type TYPE` | Authority type (mint, freeze, close) |
+| | `--disable-mint` | Disable minting of new tokens |
+| **Token Program** | `--token-2022` | Use Token 2022 program |
+| | `--standard-token` | Use Standard SPL Token program |
+| **Other** | `--dry-run` | Simulate operations without executing |
+| | `--log-file FILE` | Output log to specified file |
+| | `--verbose` | Enable detailed logging |
 
-The advanced script generates a local metadata.json file with your specified parameters. For production tokens, you should:
+## Examples
 
-1. Upload the generated metadata.json file to a permanent storage location
-2. Upload your token image to a permanent storage location
-3. Update the metadata URL in the script or use the `-m` option
+### Creating a Token
 
-## Viewing Your Token
+1. **Basic token on devnet**:
+   ```bash
+   ./create-custom-token.sh --name "Example Token" --symbol EX --amount 1000000
+   ```
 
-After running the script, you can view your token on the Solana Explorer:
-https://explorer.solana.com/address/YOUR_MINT_ADDRESS?cluster=devnet
+2. **Token with custom image and description**:
+   ```bash
+   ./create-custom-token.sh -n "Example Token" -s EX -d "My example token" -i "https://example.com/image.png" -a 1000000
+   ```
 
-Replace `YOUR_MINT_ADDRESS` with the mint address output by the script.
+3. **Token with freeze authority**:
+   ```bash
+   ./create-custom-token.sh -n "Example Token" -s EX --enable-freeze-authority
+   ```
 
-If you transferred tokens to your wallet, you can view them in any Solana wallet app that supports devnet (like Phantom or Solflare).
+4. **Non-transferable token (Token 2022)**:
+   ```bash
+   ./create-custom-token.sh -n "Example NFT" -s NFT --token-2022 --enable-non-transferable -a 1
+   ```
 
-## Important Notes
+### Burning Tokens
 
-- These scripts create tokens on the Solana devnet, not the mainnet
-- The keypairs generated are stored in the `solana-token` directory
-- Keep your keypair files safe as they control your token
-- For production tokens, you should use decentralized storage for metadata and images
-- The `--fund-recipient` flag is used when transferring tokens to automatically create the token account for the recipient 
+1. **Burn specific amount**:
+   ```bash
+   ./burn-token.sh -f wallet.json -t TOKEN_ADDRESS -a 100
+   ```
+
+2. **Burn all tokens and close account**:
+   ```bash
+   ./burn-token.sh -f wallet.json -t TOKEN_ADDRESS --close-account
+   ```
+
+3. **Batch burn from file**:
+   ```bash
+   ./burn-token.sh -f wallet.json --batch-file tokens.txt
+   ```
+
+4. **Burn from all holders**:
+   ```bash
+   ./burn-token.sh -f wallet.json -t TOKEN_ADDRESS --burn-holder-tokens
+   ```
+
+## Network Support
+
+Both scripts support all Solana networks:
+
+- `devnet` - Development network (with airdrop capability)
+- `testnet` - Test network
+- `mainnet-beta` - Production network (requires real SOL)
+
+## Security Notes
+
+- Keep your keypair files and private keys secure
+- Consider using keypair files rather than passing private keys directly
+- Test operations on devnet before using on mainnet-beta
+- Use `--dry-run` with burn operations to verify behavior
+
+## License
+
+MIT License - See LICENSE file for details. 
